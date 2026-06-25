@@ -1,0 +1,180 @@
+---
+title: "Impacto del uso del suelo urbano en los niveles de cromo y plomo en Lafayette, Louisiana (EE. UU.)"
+author: "Josue Garizabalo - C.C. 1010124907"
+date: "15-Jun-2026"
+lang: es
+format:
+  html:
+    toc: true
+    code-fold: true
+    self-contained: true
+editor: visual
+execute:
+  echo: true
+  message: false
+  warning: false
+bibliography: references.bib
+---
+
+## Introducción
+
+Los suelos urbanos pueden acumular metales pesados provenientes de actividades humanas como el tráfico vehicular, la pintura con base de plomo y antiguas zonas industriales. Estos metales persisten durante décadas y representan un riesgo para la salud humana y ambiental, especialmente para los niños, quienes tienen mayor contacto con el suelo. [@heavyme2014]
+
+Este informe utiliza el conjunto de datos publicado por [@heafner2026] , quienes muestrearon 1.290 suelos superficiales en la ciudad de Lafayette, Louisiana (EE. UU.), midiendo concentraciones de varios metales pesados en distintos usos del suelo (residencial, industrial, parques, jardines y vías).
+
+Para este trabajo se seleccionaron dos metales de interés, **Cromo (Cr)** y **Plomo (Pb)**, y se compararon dos zonas de muestreo: **Residencial** e **Industrial**. Ambos metales están relacionados con actividades antropogénicas: el Cr con emisiones industriales y desgaste de materiales de construcción, y el Pb con pintura antigua a base de plomo, gasolina con plomo (antes de su prohibición) y actividad industrial.
+
+**Pregunta de investigación:** ¿Existen diferencias en las concentraciones de cromo y plomo en el suelo entre zonas residenciales e industriales de Lafayette, y qué tan relevantes son estas diferencias desde el punto de vista del impacto ambiental?
+
+**Hipótesis:** se espera que las zonas industriales presenten concentraciones más altas y más variables de Cr y Pb que las zonas residenciales, debido a la influencia de actividades industriales legadas y actuales.
+
+## Metodologia
+
+### Origen de los datos
+
+Los datos provienen del artículo *"Urban land use impact on soil heavy metal levels in Lafayette, Louisiana (USA)"*[@heafner2026] , publicado en PLOS One. El conjunto de datos fue descargado en formato `.xlsx` y contiene dos hojas:
+
+- **Residential samples**: 736 muestras de suelo en zonas residenciales (cimentaciones de viviendas, vías peatonales, espacios abiertos).
+- **Industrial**: 34 muestras de suelo en zonas industriales.
+
+Para este informe se utilizaron únicamente las columnas correspondientes a la zona de muestreo (`Zona`), el Cromo (`Cr`) y el Plomo (`Pb`), expresados en mg/kg.
+
+### Limpieza de datos
+
+Las dos hojas del archivo se cargaron por separado, se renombró la columna de censo para que tuviera el mismo nombre en ambas (`Census tract` / `Census Tract`), y se agregó una nueva columna llamada `Zona` para identificar el origen de cada muestra (Residencial o Industrial). Posteriormente, ambas tablas se combinaron en un solo conjunto de datos usando `bind_rows()`.
+
+### Análisis realizado
+
+Se calcularon estadísticas descriptivas (media, mediana, desviación estándar y valores máximos) de Cr y Pb para cada zona. Como medida de tendencia central principal se utilizó la **media**, ya que el objetivo de este análisis es estimar la carga de exposición ambiental, donde los valores extremos (puntos de contaminación severa) son relevantes para el riesgo real y no deben descartarse.
+
+Las gráficas se realizaron con el paquete `ggplot2` [@ggplot2], y el análisis se llevó a cabo en R [@base].
+
+```{r}
+library(ggplot2)
+library(readr)
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(gt)
+library(knitr)
+```
+
+```{r}
+#| label: cargar-datos
+
+residencial <- read_excel("dataset metales proyecto R.xlsx",
+                           sheet = "Residential samples", skip = 1) |>
+  rename(Census_tract = `Census tract`) |>
+  mutate(Zona = "Residencial")
+
+industrial <- read_excel("dataset metales proyecto R.xlsx",
+                          sheet = "Industrial", skip = 1) |>
+  rename(Census_tract = `Census Tract`) |>
+  mutate(Zona = "Industrial")
+
+datos <- bind_rows(residencial, industrial) |>
+  select(Zona, Cr, Pb)
+```
+
+## Resultados
+
+### Estadísticas descriptivas
+
+La Tabla 1 muestra un resumen de las concentraciones de Cromo y Plomo (mg/kg) para cada zona. Se incluyen la media, la mediana, la desviación estándar y el valor máximo registrado.
+
+```{r}
+#| label: tabla-resumen
+resumen <- datos|>
+  pivot_longer(cols = c(Cr, Pb), names_to = "Metal", values_to = "Concentracion") |>
+  group_by(Zona, Metal) |>
+  summarise(
+    Media = mean(Concentracion, na.rm = TRUE),
+    Mediana = median(Concentracion, na.rm = TRUE),
+    SD = sd(Concentracion, na.rm = TRUE),
+    Maximo = max(Concentracion, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+kable(resumen, digits = 2,
+      caption = "Tabla 1. Estadísticas descriptivas de Cromo y Plomo (mg/kg) por zona.")
+```
+
+### Analisis exploratorio de datos
+
+La Figura 1 muestra la distribución completa de los valores de Cromo y Plomo en cada zona mediante diagramas de caja (boxplot). Esta gráfica permite observar tanto la tendencia central como la dispersión y los valores atípicos de cada metal.
+
+```{r}
+#| label: fig-boxplot
+#| fig-cap: "Figura 1. Distribución de las concentraciones de Cromo y Plomo (mg/kg) en zonas residencial e industrial de Lafayette, LA."
+
+datos_largo <- datos |>
+  pivot_longer(cols = c(Cr, Pb), names_to = "Metal", values_to = "Concentracion")
+
+ggplot(datos_largo, aes(x = Zona, y = Concentracion, fill = Zona)) +
+  geom_boxplot(outlier.alpha = 0.4) +
+  facet_wrap(~ Metal, scales = "free_y") +
+  labs(title = "Concentración de Cromo y Plomo por zona",
+       x = "Zona",
+       y = "Concentración (mg/kg)",
+       fill = "Zona") +
+  theme_minimal()
+```
+
+La Figura 2 presenta la concentración **promedio** de cada metal por zona, junto con barras de error que representan una desviación estándar. Esta gráfica resume la carga promedio de exposición a cada metal en cada zona.
+
+```{r}
+#| label: fig-barras
+#| fig-cap: "Figura 2. Concentración promedio (± desviación estándar) de Cromo y Plomo por zona."
+
+ggplot(resumen, aes(x = Zona, y = Media, fill = Zona)) +
+  geom_bar(stat = "identity") +
+  geom_errorbar(aes(ymin = Media - SD, ymax = Media + SD), width = 0.2) +
+  facet_wrap(~ Metal, scales = "free_y") +
+  labs(title = "Concentración promedio de Cromo y Plomo por zona",
+       x = "Zona",
+       y = "Concentración promedio (mg/kg)",
+       fill = "Zona") +
+  theme_minimal()
+```
+
+Finalmente, la Figura 3 compara directamente el Plomo (Pb) frente a un valor de referencia ambiental: el límite de 400 mg/kg establecido por la *Louisiana Department of Environmental Quality* (LDEQ) para suelo residencial [@heafner2026].
+
+```{r}
+#| label: fig-pb-umbral
+#| fig-cap: "Figura 3. Concentración promedio de Plomo por zona frente al umbral de referencia de la LDEQ (400 mg/kg)."
+
+ggplot(resumen |> filter(Metal == "Pb"), aes(x = Zona, y = Media, fill = Zona)) +
+  geom_bar(stat = "identity") +
+  geom_hline(yintercept = 400, linetype = "dashed", color = "blue") +
+  annotate("text", x = 1.5, y = 430,
+           label = "Umbral LDEQ (400 mg/kg)", color = "black", size = 3.5) +
+  labs(title = "Concentración promedio de Plomo vs umbral de referencia (LDEQ)",
+       x = "Zona",
+       y = "Pb promedio (mg/kg)",
+       fill = "Zona") +
+  theme_minimal()      
+```
+
+### Descripción de los patrones observados
+
+En la Tabla 1 se observa que, en promedio, las muestras de la zona Industrial presentan concentraciones más altas tanto de Cromo como de Plomo en comparación con la zona Residencial. La diferencia es particularmente marcada en el Plomo, donde la media industrial es casi cuatro veces mayor que la residencial.
+
+La Figura 1 muestra que ambas zonas presentan distribuciones con asimetría hacia la derecha, es decir, la mayoría de las muestras se concentran en valores bajos, pero existen algunos valores extremadamente altos que se alejan mucho del resto. Esto es especialmente visible en el Plomo, donde tanto en la zona residencial como en la industrial se identifican valores puntuales que superan los 5.000 mg/kg, muy por encima del resto de las muestras.
+
+En la Figura 2, las barras de error (desviación estándar) son considerablemente más grandes para el Plomo que para el Cromo, lo que refleja la alta variabilidad de este metal y la influencia de los valores extremos mencionados anteriormente.
+
+En la Figura 3 se observa que, en promedio, ninguna de las dos zonas supera el umbral de referencia de 400 mg/kg establecido por la LDEQ para Plomo en suelo residencial. Sin embargo, esto no significa que no existan puntos específicos de muestreo que sí lo superen.
+
+## Discusión
+
+Los resultados son consistentes con la hipótesis planteada: las zonas industriales presentaron concentraciones promedio más altas y más variables de Cromo y Plomo en comparación con las zonas residenciales. Esto coincide con lo reportado por Heafner & Paltseva (2026), quienes encontraron que las zonas industriales de Lafayette presentan las cargas metálicas más altas, particularmente para Pb y Zn, debido a actividades industriales legadas, emisiones vehiculares y materiales de construcción.
+
+Un hallazgo importante es la presencia de valores extremos de Plomo (superiores a 5.000 mg/kg) tanto en la zona residencial como en la industrial. Según el artículo de referencia, estos valores tan altos suelen estar asociados a puntos muy específicos de contaminación, como cimentaciones de viviendas antiguas con pintura a base de plomo (prohibida en EE. UU. desde 1978) o zonas que fueron, en algún momento, de uso industrial. Es decir, aunque en promedio las concentraciones no superan los umbrales de referencia, existen "puntos calientes" (hotspots) de contaminación que representan un riesgo localizado importante, especialmente si se encuentran en zonas donde los niños pueden estar en contacto frecuente con el suelo.
+
+**Respecto a la pregunta de investigación**, sí se encontraron diferencias entre las dos zonas, siendo la zona industrial la que presenta, en promedio, mayores concentraciones de ambos metales. Sin embargo, la magnitud de la diferencia y la presencia de valores extremos en ambas zonas sugiere que el impacto ambiental no depende únicamente del uso del suelo en general, sino también de la historia particular de cada sitio (por ejemplo, si hubo actividad industrial previa o si la vivienda es anterior a 1978).
+
+## Conclusión
+
+Las zonas industriales de Lafayette, Louisiana, presentan en promedio concentraciones más altas de Cromo y Plomo que las zonas residenciales, lo cual es consistente con la influencia de actividades industriales legadas sobre la calidad del suelo. Sin embargo, la presencia de valores extremos de Plomo en ambas zonas, asociados probablemente a fuentes puntuales como pintura antigua a base de plomo, indica que el riesgo ambiental no es uniforme dentro de cada categoría de uso del suelo, sino que depende de la historia particular de cada sitio. Estos hallazgos resaltan la importancia de realizar monitoreo localizado, en especial en zonas residenciales con viviendas antiguas, para identificar y gestionar adecuadamente los puntos de mayor riesgo de exposición a metales pesados.
+
+## Referencias
